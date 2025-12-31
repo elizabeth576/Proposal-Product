@@ -1,0 +1,137 @@
+version: '3.8'
+
+# =============================================================================
+# Development Docker Compose
+# =============================================================================
+# Usage: docker-compose -f docker-compose.dev.yml up
+#
+# Features:
+# - Hot reloading for frontend and backend
+# - Volume mounts for source code
+# - Debug-friendly configuration
+
+services:
+  # ==========================================================================
+  # PostgreSQL Database
+  # ==========================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: proposal-db-dev
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: proposal_generator
+    volumes:
+      - postgres_data_dev:/var/lib/postgresql/data
+      - ./backend/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d proposal_generator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - proposal-network-dev
+
+  # ==========================================================================
+  # Backend API (Development)
+  # ==========================================================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: proposal-api-dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: proposal_generator
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      JWT_SECRET: dev-secret-key-not-for-production
+      JWT_ACCESS_EXPIRY: 1h
+      JWT_REFRESH_EXPIRY: 7d
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/package.json:/app/package.json
+      - backend_node_modules:/app/node_modules
+    networks:
+      - proposal-network-dev
+
+  # ==========================================================================
+  # Frontend (Development)
+  # ==========================================================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: proposal-web-dev
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3001/api
+      JWT_SECRET: dev-secret-key-not-for-production
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./package.json:/app/package.json
+      - ./next.config.js:/app/next.config.js
+      - ./tailwind.config.ts:/app/tailwind.config.ts
+      - ./tsconfig.json:/app/tsconfig.json
+      - frontend_node_modules:/app/node_modules
+      - next_cache:/app/.next
+    networks:
+      - proposal-network-dev
+
+  # ==========================================================================
+  # pgAdmin (Database Management)
+  # ==========================================================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: proposal-pgadmin-dev
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@proposal.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    volumes:
+      - pgadmin_data_dev:/var/lib/pgadmin
+    networks:
+      - proposal-network-dev
+
+volumes:
+  postgres_data_dev:
+    driver: local
+  pgadmin_data_dev:
+    driver: local
+  backend_node_modules:
+    driver: local
+  frontend_node_modules:
+    driver: local
+  next_cache:
+    driver: local
+
+networks:
+  proposal-network-dev:
+    driver: bridge
