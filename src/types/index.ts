@@ -206,6 +206,19 @@ export interface ProposalUpdateInput extends Partial<ProposalCreateInput> {
   id: string;
 }
 
+export interface ProposalGenerateInput extends ProposalCreateInput {
+  proposal_id: string;
+  document_signed_urls: string[];
+  audio_signed_urls: string[];
+}
+
+export interface ProposalGenerateResponse {
+  proposal_id: string;
+  generated_pdf_path?: string;
+  status: string;
+  message: string;
+}
+
 // ============================================================================
 // Template Types
 // ============================================================================

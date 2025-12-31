@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock, User, Building } from 'lucide-react';
 import { Button, Input, Card, Select } from '@/components/ui';
@@ -193,11 +194,11 @@ export default function RegisterPage() {
 
           <p className="text-xs text-slate-500">
             By creating an account, you agree to our{' '}
-            <Link href="/terms" className="text-primary-600 hover:underline">
+            <Link href={"/terms" as Route} className="text-primary-600 hover:underline">
               Terms of Service
             </Link>{' '}
             and{' '}
-            <Link href="/privacy" className="text-primary-600 hover:underline">
+            <Link href={"/privacy" as Route} className="text-primary-600 hover:underline">
               Privacy Policy
             </Link>
             .

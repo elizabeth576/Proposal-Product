@@ -5,6 +5,8 @@ import {
   ProposalCreateInput,
   ProposalUpdateInput,
   ProposalFilters,
+  ProposalGenerateInput,
+  ProposalGenerateResponse,
   ApiResponse,
   ApiMeta,
 } from '@/types';
@@ -35,7 +37,10 @@ export const proposalsApi = {
    * Get paginated list of proposals with optional filters
    */
   list: async (filters?: ProposalFilters): Promise<ApiResponse<ProposalsListResponse>> => {
-    return apiClient.get<ProposalsListResponse>(API_ENDPOINTS.PROPOSALS, filters);
+    return apiClient.get<ProposalsListResponse>(
+      API_ENDPOINTS.PROPOSALS,
+      filters as Record<string, string | number | boolean | undefined>
+    );
   },
 
   /**
@@ -83,6 +88,19 @@ export const proposalsApi = {
   reject: async (id: string, data: ProposalRejectInput): Promise<ApiResponse<Proposal>> => {
     return apiClient.post<Proposal>(API_ENDPOINTS.PROPOSAL_REJECT(id), data);
   },
+
+  /**
+   * Generate proposal with signed document and audio URLs
+   * Submits to /product/proposals/generate endpoint
+   */
+  generate: async (
+    data: ProposalGenerateInput
+  ): Promise<ApiResponse<ProposalGenerateResponse>> => {
+    return apiClient.post<ProposalGenerateResponse>(
+      API_ENDPOINTS.PROPOSAL_GENERATE,
+      data
+    );
+  },
 };
 
 // ============================================================================
@@ -99,7 +117,7 @@ export const proposalsServerApi = {
   ): Promise<ApiResponse<ProposalsListResponse>> => {
     return serverFetch<ProposalsListResponse>(API_ENDPOINTS.PROPOSALS, {
       accessToken,
-      params: filters,
+      params: filters as Record<string, string | number | boolean | undefined>,
       tags: ['proposals'],
       revalidate: 60, // Revalidate every 60 seconds
     });

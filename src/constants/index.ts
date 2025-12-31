@@ -28,6 +28,7 @@ export const API_ENDPOINTS = {
   PROPOSAL_BY_ID: (id: string) => `/proposals/${id}`,
   PROPOSAL_APPROVE: (id: string) => `/proposals/${id}/approve`,
   PROPOSAL_REJECT: (id: string) => `/proposals/${id}/reject`,
+  PROPOSAL_GENERATE: '/product/proposals/generate',
 
   // Templates
   TEMPLATES: '/templates',

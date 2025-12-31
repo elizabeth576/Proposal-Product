@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
+import Link, { LinkProps } from 'next/link';
+import type { Route } from 'next';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import { Button, Input, Card } from '@/components/ui';
@@ -135,7 +136,7 @@ export default function LoginPage() {
             />
             <div className="mt-2 text-right">
               <Link
-                href="/forgot-password"
+                href={"/forgot-password" as Route}
                 className="text-sm text-primary-600 hover:text-primary-700"
               >
                 Forgot password?

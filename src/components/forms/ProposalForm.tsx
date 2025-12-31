@@ -3,6 +3,7 @@
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Plus, Trash2, GripVertical, Upload, FileText, Music, X } from 'lucide-react';
+import { useAuth } from '@/contexts/AuthContext';
 import {
   Button,
   Input,
@@ -13,9 +14,14 @@ import {
   CardContent,
 } from '@/components/ui';
 import { proposalsApi, ApiRequestError } from '@/lib/api';
+import { insertProposal } from '@/lib/api/supabaseProposals';
 import { proposalCreateSchema } from '@/lib/validations';
 import { generateId } from '@/lib/utils';
 import { supabase } from '@/lib/api/supabaseClient';
+import {
+  generateAllSignedUrls,
+  STORAGE_BUCKETS,
+} from '@/lib/storage';
 import {
   Currency,
   BillingType,
@@ -39,6 +45,7 @@ interface UploadedFile {
   id: string;
   name: string;
   path: string;
+  url: string;
   size: number;
 }
 
@@ -113,6 +120,7 @@ const getInitialLink = (): LinkInput => ({
 
 export function ProposalForm() {
   const router = useRouter();
+  const { productUser } = useAuth();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<FormErrors>({});
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -120,7 +128,6 @@ export function ProposalForm() {
   // File upload refs and state
   const documentInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
-  const [proposalFolderId] = useState(() => generateId());
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedFile[]>([]);
   const [uploadedAudio, setUploadedAudio] = useState<UploadedFile[]>([]);
   const [isUploadingDocuments, setIsUploadingDocuments] = useState(false);
@@ -157,29 +164,50 @@ export function ProposalForm() {
   // File Upload Handlers
   // ============================================================================
 
+  // Get storage path based on organization_id and user_id
+  const getStoragePath = (fileName: string): string => {
+    if (!productUser) {
+      throw new Error('User not authenticated');
+    }
+    const fileExt = fileName.split('.').pop();
+    const uniqueFileName = `${generateId()}.${fileExt}`;
+    return `${productUser.organization_id}/${productUser.user_id}/${uniqueFileName}`;
+  };
+
   const uploadFileToSupabase = async (
     file: File,
-    bucket: string,
-    folderId: string
-  ): Promise<{ path: string; error: string | null }> => {
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${generateId()}.${fileExt}`;
-    const filePath = `${folderId}/${fileName}`;
+    bucket: string
+  ): Promise<{ path: string; url: string; error: string | null }> => {
+    try {
+      const filePath = getStoragePath(file.name);
 
-    const { error } = await supabase.storage
-      .from(bucket)
-      .upload(filePath, file);
+      const { error } = await supabase.storage
+        .from(bucket)
+        .upload(filePath, file);
 
-    if (error) {
-      return { path: '', error: error.message };
+      if (error) {
+        return { path: '', url: '', error: error.message };
+      }
+
+      // Get the public URL for the uploaded file
+      const { data: urlData } = supabase.storage
+        .from(bucket)
+        .getPublicUrl(filePath);
+
+      return { path: filePath, url: urlData.publicUrl, error: null };
+    } catch (err) {
+      return { path: '', url: '', error: err instanceof Error ? err.message : 'Upload failed' };
     }
-
-    return { path: filePath, error: null };
   };
 
   const handleDocumentUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
+
+    if (!productUser) {
+      setUploadError('You must be logged in to upload files');
+      return;
+    }
 
     setIsUploadingDocuments(true);
     setUploadError(null);
@@ -187,10 +215,9 @@ export function ProposalForm() {
     const newUploads: UploadedFile[] = [];
 
     for (const file of Array.from(files)) {
-      const { path, error } = await uploadFileToSupabase(
+      const { path, url, error } = await uploadFileToSupabase(
         file,
-        'proposal-documents',
-        proposalFolderId
+        STORAGE_BUCKETS.DOCUMENTS
       );
 
       if (error) {
@@ -202,6 +229,7 @@ export function ProposalForm() {
         id: generateId(),
         name: file.name,
         path,
+        url,
         size: file.size,
       });
     }
@@ -219,16 +247,20 @@ export function ProposalForm() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    if (!productUser) {
+      setUploadError('You must be logged in to upload files');
+      return;
+    }
+
     setIsUploadingAudio(true);
     setUploadError(null);
 
     const newUploads: UploadedFile[] = [];
 
     for (const file of Array.from(files)) {
-      const { path, error } = await uploadFileToSupabase(
+      const { path, url, error } = await uploadFileToSupabase(
         file,
-        'proposal-audio',
-        proposalFolderId
+        STORAGE_BUCKETS.AUDIO
       );
 
       if (error) {
@@ -240,6 +272,7 @@ export function ProposalForm() {
         id: generateId(),
         name: file.name,
         path,
+        url,
         size: file.size,
       });
     }
@@ -256,7 +289,7 @@ export function ProposalForm() {
   const removeDocument = async (fileId: string) => {
     const file = uploadedDocuments.find((f) => f.id === fileId);
     if (file) {
-      await supabase.storage.from('proposal-documents').remove([file.path]);
+      await supabase.storage.from(STORAGE_BUCKETS.DOCUMENTS).remove([file.path]);
       setUploadedDocuments((prev) => prev.filter((f) => f.id !== fileId));
     }
   };
@@ -264,7 +297,7 @@ export function ProposalForm() {
   const removeAudioFile = async (fileId: string) => {
     const file = uploadedAudio.find((f) => f.id === fileId);
     if (file) {
-      await supabase.storage.from('proposal-audio').remove([file.path]);
+      await supabase.storage.from(STORAGE_BUCKETS.AUDIO).remove([file.path]);
       setUploadedAudio((prev) => prev.filter((f) => f.id !== fileId));
     }
   };
@@ -283,6 +316,15 @@ export function ProposalForm() {
     e.preventDefault();
     setErrors({});
     setSubmitError(null);
+
+    if (!productUser) {
+      setSubmitError('You must be logged in to create a proposal');
+      return;
+    }
+
+    // Collect file URLs from uploaded files (full Supabase storage URLs)
+    const documentUrls = uploadedDocuments.map((f) => f.url);
+    const audioUrls = uploadedAudio.map((f) => f.url);
 
     const formData = {
       title,
@@ -303,11 +345,11 @@ export function ProposalForm() {
       team_members: teamMembers.map(({ id, ...t }) => t),
       submitted_to: recipients.map(({ id, ...r }) => r),
       links: links.map(({ id, ...l }) => l),
-      audio_path: uploadedAudio.map((f) => f.path),
-      document_path: uploadedDocuments.map((f) => f.path),
+      audio_path: audioUrls,
+      document_path: documentUrls,
     };
 
-    // Validate
+    // Validate form data
     const result = proposalCreateSchema.safeParse(formData);
     if (!result.success) {
       const fieldErrors: FormErrors = {};
@@ -320,10 +362,42 @@ export function ProposalForm() {
     }
 
     setIsSubmitting(true);
-console.log(result.data)
+
     try {
-      const response = await proposalsApi.create(result.data);
-      router.push(`/proposals/${response.data.id}`);
+      // Step 1: Save proposal to Supabase proposals table with file URLs
+      const { data: proposal, error: insertError } = await insertProposal({
+        ...result.data,
+        organization_id: productUser.organization_id,
+        created_by: productUser.user_id,
+      });
+
+      if (insertError || !proposal) {
+        throw new Error(insertError || 'Failed to save proposal');
+      }
+
+      const proposalId = proposal.id;
+
+      // Step 2: Generate signed URLs for uploaded documents and audio files
+      const documentPaths = uploadedDocuments.map((f) => f.path);
+      const audioPaths = uploadedAudio.map((f) => f.path);
+
+      const { documentUrls: signedDocUrls, audioUrls: signedAudioUrls, errors: signedUrlErrors } =
+        await generateAllSignedUrls(documentPaths, audioPaths);
+
+      if (signedUrlErrors.length > 0) {
+        console.warn('Some signed URLs failed to generate:', signedUrlErrors);
+      }
+
+      // Step 3: POST form data + signed URLs to backend generate endpoint
+      await proposalsApi.generate({
+        ...result.data,
+        proposal_id: proposalId,
+        document_signed_urls: signedDocUrls,
+        audio_signed_urls: signedAudioUrls,
+      });
+
+      // Navigate to the proposal detail page
+      router.push(`/proposals/${proposalId}`);
     } catch (error) {
       if (error instanceof ApiRequestError) {
         setSubmitError(error.message);
@@ -334,6 +408,8 @@ console.log(result.data)
             )
           );
         }
+      } else if (error instanceof Error) {
+        setSubmitError(error.message);
       } else {
         setSubmitError('An unexpected error occurred. Please try again.');
       }
